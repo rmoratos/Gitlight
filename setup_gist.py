@@ -51,12 +51,14 @@ def create_gist(token):
         sys.exit(1)
 
 
-def save_config(gist_id, token, username):
+def save_config(gist_id, token, username, display_name=None, other_display_name=None):
     """Guarda la configuración en ~/.gitlight-config.json"""
     config = {
         "gist_id": gist_id,
         "github_token": token,
-        "my_username": username
+        "my_username": username,
+        "display_name": display_name or username,
+        "other_display_name": other_display_name or ""
     }
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
@@ -83,6 +85,14 @@ def main():
         print("❌ Username vacío. Saliendo.")
         sys.exit(1)
 
+    display_name = input(
+        f"✏️  Tu nombre visible (deja vacío para usar '{username}'): "
+    ).strip() or username
+
+    other_display_name = input(
+        "✏️  Nombre visible del otro usuario (ej: 'Hijo', 'Papá', deja vacío para usar su username): "
+    ).strip()
+
     existing_gist_id = input(
         "\n📋 ¿Ya tienes el Gist ID (porque el otro lo configuró antes)?\n"
         "   Si NO, deja vacío y se creará uno nuevo: "
@@ -101,7 +111,7 @@ def main():
         print(f"  Gist ID: {gist_id}")
         print("=" * 55)
 
-    save_config(gist_id, token, username)
+    save_config(gist_id, token, username, display_name, other_display_name)
     print(f"\n✅ Configuración guardada en: {CONFIG_PATH}")
     print()
     print("=" * 55)

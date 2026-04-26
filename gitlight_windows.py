@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-gitlight_windows.py — Gitlight en la bandeja del sistema (Windows)
+gitlight_windows.py — Gitlight system tray widget (Windows)
 
-Instala dependencias:
+Install dependencies:
     pip install pystray pillow requests
 
-Ejecutar:
+Run:
     python gitlight_windows.py
 """
 
@@ -20,34 +20,34 @@ try:
     import pystray
     from pystray import MenuItem as Item, Menu
 except ImportError:
-    print("Falta la libreria 'pystray'. Instalala con:\n   pip install pystray pillow requests")
-    input("Pulsa Enter para salir...")
+    print("Missing 'pystray'. Install with:\n   pip install pystray pillow requests")
+    input("Press Enter to exit...")
     sys.exit(1)
 
 try:
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw
 except ImportError:
-    print("Falta la libreria 'Pillow'. Instalala con:\n   pip install pystray pillow requests")
-    input("Pulsa Enter para salir...")
+    print("Missing 'Pillow'. Install with:\n   pip install pystray pillow requests")
+    input("Press Enter to exit...")
     sys.exit(1)
 
 try:
     import requests
 except ImportError:
-    print("Falta la libreria 'requests'. Instalala con:\n   pip install pystray pillow requests")
-    input("Pulsa Enter para salir...")
+    print("Missing 'requests'. Install with:\n   pip install pystray pillow requests")
+    input("Press Enter to exit...")
     sys.exit(1)
 
-# ── Configuracion ─────────────────────────────────────────────────────────────
+# ── Config ────────────────────────────────────────────────────────────────────
 CONFIG_PATH   = os.path.expanduser("~/.gitlight-config.json")
-POLL_INTERVAL = 15        # segundos entre consultas
-STALE_HOURS   = 8         # horas sin actividad -> libre
+POLL_INTERVAL = 15      # seconds between polls
+STALE_HOURS   = 8       # hours of inactivity → treat as free
 
 COLORS = {
-    "free":  (34,  197, 94),    # verde
-    "me":    (59,  130, 246),   # azul
-    "other": (239, 68,  68),    # rojo
-    "error": (156, 163, 175),   # gris
+    "free":  (34,  197, 94),    # green
+    "me":    (59,  130, 246),   # blue
+    "other": (239, 68,  68),    # red
+    "error": (156, 163, 175),   # grey
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -57,8 +57,8 @@ def load_config():
         import ctypes
         ctypes.windll.user32.MessageBoxW(
             0,
-            f"Ejecuta primero setup_gist.py para configurar el semaforo.\n\nArchivo esperado:\n{CONFIG_PATH}",
-            "Gitlight — Configuracion no encontrada",
+            f"Run setup_gist.py first to configure Gitlight.\n\nExpected file:\n{CONFIG_PATH}",
+            "Gitlight — config not found",
             0x10
         )
         sys.exit(1)
@@ -67,11 +67,11 @@ def load_config():
 
 
 def make_icon(color_key):
-    """Crea una imagen de 64x64 con un circulo de color."""
-    size  = 64
-    img   = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw  = ImageDraw.Draw(img)
-    color = COLORS.get(color_key, COLORS["error"])
+    """Creates a 64×64 colored circle image for the tray."""
+    size   = 64
+    img    = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw   = ImageDraw.Draw(img)
+    color  = COLORS.get(color_key, COLORS["error"])
     margin = 4
     draw.ellipse(
         [margin, margin, size - margin, size - margin],
@@ -101,43 +101,46 @@ def is_stale(since_str):
         return False
 
 
-# ── App principal ─────────────────────────────────────────────────────────────
+# ── App ───────────────────────────────────────────────────────────────────────
 
-class SemaforoApp:
+class GitlightApp:
 
     def __init__(self):
-        self.config     = load_config()
-        self.is_working = False
-        self._lock      = threading.Lock()
+        self.config       = load_config()
+        self.is_working   = False
+        self._lock        = threading.Lock()
+        self._prev_worker = None   # tracks changes to trigger notifications
+        self._first_poll  = True   # skip notification on startup
 
-        # Estado inicial
-        self._status_text = "Conectando..."
+        # display_name is optional in config; falls back to my_username
+        self._my_display  = self.config.get("display_name") or self.config["my_username"]
+
+        self._status_text = "Connecting..."
         self._color_key   = "error"
 
-        # Crear el icono de bandeja
         self.icon = pystray.Icon(
             "gitlight",
             icon=make_icon("error"),
-            title="Gitlight — conectando...",
+            title="Gitlight — connecting...",
             menu=self._build_menu()
         )
 
     # ── Menu ──────────────────────────────────────────────────────────────────
 
     def _build_menu(self):
-        label = "Terminar de trabajar" if self.is_working else "Empezar a trabajar"
+        label = "Stop working" if self.is_working else "Start working"
         return Menu(
             Item(lambda _: self._status_text, None, enabled=False),
             Menu.SEPARATOR,
             Item(label, self._toggle_work),
             Menu.SEPARATOR,
-            Item("Salir", self._quit),
+            Item("Quit", self._quit),
         )
 
     def _refresh_menu(self):
         self.icon.menu = self._build_menu()
 
-    # ── Red ───────────────────────────────────────────────────────────────────
+    # ── Network ───────────────────────────────────────────────────────────────
 
     def _get_remote_state(self):
         cfg  = self.config
@@ -181,10 +184,10 @@ class SemaforoApp:
             worker, since = self._get_remote_state()
         except Exception as e:
             with self._lock:
-                self._status_text = f"Sin conexion ({type(e).__name__})"
+                self._status_text = f"No connection ({type(e).__name__})"
                 self._color_key   = "error"
             self.icon.icon  = make_icon("error")
-            self.icon.title = "Gitlight — sin conexion"
+            self.icon.title = "Gitlight — no connection"
             return
 
         my_user = self.config["my_username"]
@@ -193,27 +196,45 @@ class SemaforoApp:
             worker = None
 
         with self._lock:
+            changed = (worker != self._prev_worker)
+
             if worker is None:
-                self._status_text = "Libre — nadie esta trabajando"
-                self._color_key   = "free"
+                self._status_text = "Free — nobody is working"
                 self.icon.icon    = make_icon("free")
-                self.icon.title   = "Gitlight — Libre"
-                if not self.is_working:
-                    self._refresh_menu()
-            elif worker == my_user:
-                self._status_text = "Tu estas trabajando"
-                self._color_key   = "me"
-                self.icon.icon    = make_icon("me")
-                self.icon.title   = "Gitlight — Tu estas trabajando"
-            else:
-                self._status_text = f"{worker} esta trabajando — espera!"
-                self._color_key   = "other"
-                self.icon.icon    = make_icon("other")
-                self.icon.title   = f"Gitlight — {worker} esta trabajando"
+                self.icon.title   = "Gitlight — Free"
+                # Notify if someone just stopped working
+                if changed and not self._first_poll and self._prev_worker and self._prev_worker != my_user:
+                    self.icon.notify(
+                        f"The project is free — you can start working.",
+                        "🟢 Gitlight"
+                    )
                 if not self.is_working:
                     self._refresh_menu()
 
-    # ── Acciones ──────────────────────────────────────────────────────────────
+            elif worker == my_user:
+                self._status_text = f"{self._my_display} is working (you)"
+                self.icon.icon    = make_icon("me")
+                self.icon.title   = f"Gitlight — {self._my_display} is working"
+
+            else:
+                # Resolve display name: check if config has a name for this user
+                other_display = self.config.get("other_display_name") or worker
+                self._status_text = f"{other_display} is working on the project"
+                self.icon.icon    = make_icon("other")
+                self.icon.title   = f"🔴 Gitlight — {other_display} is working"
+                # Notify if this person just started
+                if changed and not self._first_poll:
+                    self.icon.notify(
+                        f"{other_display} is working on the project — please wait!",
+                        "🔴 Gitlight"
+                    )
+                if not self.is_working:
+                    self._refresh_menu()
+
+            self._prev_worker = worker
+            self._first_poll  = False
+
+    # ── Actions ───────────────────────────────────────────────────────────────
 
     def _toggle_work(self, icon, item):
         my_user = self.config["my_username"]
@@ -222,21 +243,21 @@ class SemaforoApp:
                 if not self.is_working:
                     self._set_remote_state(my_user)
                     self.is_working   = True
-                    self._status_text = "Tu estas trabajando"
-                    self._color_key   = "me"
+                    self._prev_worker = my_user
+                    self._status_text = f"{self._my_display} is working (you)"
                     self.icon.icon    = make_icon("me")
-                    self.icon.title   = "Gitlight — Tu estas trabajando"
+                    self.icon.title   = f"Gitlight — {self._my_display} is working"
                 else:
                     self._set_remote_state(None)
                     self.is_working   = False
-                    self._status_text = "Libre — nadie esta trabajando"
-                    self._color_key   = "free"
+                    self._prev_worker = None
+                    self._status_text = "Free — nobody is working"
                     self.icon.icon    = make_icon("free")
-                    self.icon.title   = "Gitlight — Libre"
+                    self.icon.title   = "Gitlight — Free"
             self._refresh_menu()
         except Exception as e:
             import ctypes
-            ctypes.windll.user32.MessageBoxW(0, str(e), "Error al actualizar estado", 0x10)
+            ctypes.windll.user32.MessageBoxW(0, str(e), "Gitlight — error", 0x10)
 
     def _quit(self, icon, item):
         if self.is_working:
@@ -257,4 +278,4 @@ class SemaforoApp:
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    SemaforoApp().run()
+    GitlightApp().run()

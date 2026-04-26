@@ -80,6 +80,8 @@ class SemaforoApp(rumps.App):
         super().__init__(ICONS["error"], quit_button=None)
         self.config      = load_config()
         self.is_working  = False
+        # display_name is optional in config; falls back to my_username
+        self._my_display = self.config.get("display_name") or self.config["my_username"]
 
         # Elementos del menú
         self.status_item = rumps.MenuItem("Conectando…")
@@ -149,18 +151,20 @@ class SemaforoApp(rumps.App):
         if worker and is_stale(since):
             worker = None
 
+        other_display = self.config.get("other_display_name") or worker
+
         if worker is None:
             self.title = ICONS["free"]
             self.status_item.title = "✅ Libre — nadie está trabajando"
             if not self.is_working:
                 self.toggle_item.title = "▶  Empezar a trabajar"
         elif worker == my_user:
-            self.title = ICONS["me"]
-            self.status_item.title = "🔵 Tú estás trabajando"
+            self.title = f"🔵  {self._my_display} está trabajando"
+            self.status_item.title = f"🔵 {self._my_display} está trabajando (tú)"
             self.toggle_item.title  = "⏹  Terminar de trabajar"
         else:
-            self.title = ICONS["other"]
-            self.status_item.title = f"🔴 {worker} está trabajando — ¡espera!"
+            self.title = f"🔴  {other_display} está trabajando en el proyecto"
+            self.status_item.title = f"🔴 {other_display} está trabajando — ¡espera!"
             if not self.is_working:
                 self.toggle_item.title = "▶  Empezar a trabajar"
 
@@ -172,8 +176,8 @@ class SemaforoApp(rumps.App):
             if not self.is_working:
                 self._set_remote_state(my_user)
                 self.is_working         = True
-                self.title              = ICONS["me"]
-                self.status_item.title  = "🔵 Tú estás trabajando"
+                self.title              = f"🔵  {self._my_display} está trabajando"
+                self.status_item.title  = f"🔵 {self._my_display} está trabajando (tú)"
                 self.toggle_item.title  = "⏹  Terminar de trabajar"
             else:
                 self._set_remote_state(None)
